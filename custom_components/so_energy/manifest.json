@@ -1,0 +1,12 @@
+{
+  "domain": "so_energy",
+  "name": "So Energy",
+  "codeowners": ["@jpjoseph12"],
+  "config_flow": true,
+  "documentation": "https://github.com/jpjoseph12/ha-so-energy",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/jpjoseph12/ha-so-energy/issues",
+  "requirements": [],
+  "version": "0.2.0"
+}

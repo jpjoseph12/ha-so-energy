@@ -1,0 +1,58 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "So Energy",
+        "description": "Sign in with your So Energy account to track your So Charged allowance.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-enter So Energy password",
+        "description": "The password for {email} no longer works.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Email or password was rejected by So Energy.",
+      "cannot_connect": "Signed in, but couldn't read So Charged data. Check the Home Assistant log.",
+      "unknown": "Unexpected error. Check the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This So Energy account is already set up.",
+      "reauth_successful": "Password updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "So Energy options",
+        "data": {
+          "scan_interval_minutes": "Update interval"
+        },
+        "data_description": {
+          "scan_interval_minutes": "How often to check your So Charged allowance (minutes)."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "kwh_remaining": { "name": "Remaining energy" },
+      "kwh_used": { "name": "Energy used" },
+      "kwh_allowance": { "name": "Energy allowance" },
+      "percent_used": { "name": "Allowance used" },
+      "miles_remaining": { "name": "Remaining miles" },
+      "miles_used": { "name": "Miles used" },
+      "rewards_balance": { "name": "Rewards balance" },
+      "last_charge_energy": { "name": "Last charge" },
+      "charger_status": { "name": "Charger status" },
+      "smart_charge_stage": { "name": "Smart charge stage" },
+      "last_updated": { "name": "Last updated" }
+    }
+  }
+}
