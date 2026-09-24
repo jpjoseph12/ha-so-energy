@@ -42,3 +42,7 @@ All entities hang off one **So Charged** device.
 3. Reads the app's home page data, which is where the allowance, sessions and charger state come from.
 
 Your email and password are stored in Home Assistant's config entry, like any other cloud integration, and are only sent to So Energy.
+
+## Licence
+
+[MIT](LICENSE)
