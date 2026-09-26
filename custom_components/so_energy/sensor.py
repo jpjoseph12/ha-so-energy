@@ -153,6 +153,8 @@ SENSORS: tuple[SoChargedSensorDescription, ...] = (
         icon="mdi:map-marker-distance",
         device_class=SensorDeviceClass.DISTANCE,
         native_unit_of_measurement=UnitOfLength.MILES,
+        # So Charged quotes range in miles; don't let a metric HA convert it to km.
+        suggested_unit_of_measurement=UnitOfLength.MILES,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
         value_fn=lambda d: _remaining(d, "rangeAvailable", "rangeUsed"),
@@ -163,6 +165,7 @@ SENSORS: tuple[SoChargedSensorDescription, ...] = (
         icon="mdi:car-electric",
         device_class=SensorDeviceClass.DISTANCE,
         native_unit_of_measurement=UnitOfLength.MILES,
+        suggested_unit_of_measurement=UnitOfLength.MILES,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
         value_fn=lambda d: _num(_range(d).get("rangeUsed")),
