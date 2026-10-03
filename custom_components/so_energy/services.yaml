@@ -1,0 +1,56 @@
+set_charge_target:
+  fields:
+    energy_kwh:
+      example: 30
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+          unit_of_measurement: kWh
+          mode: box
+    soc_percent:
+      example: 80
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+          mode: slider
+    ready_by:
+      example: "07:00"
+      selector:
+        time:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: so_energy
+
+start_boost:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: so_energy
+
+stop_boost:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: so_energy
+
+cancel_scheduled_charge:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: so_energy
+
+reschedule_charge:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: so_energy

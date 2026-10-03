@@ -1,4 +1,4 @@
-"""The So Energy integration (So Charged allowance)."""
+"""The So Energy integration (So Charged allowance and smart-charging controls)."""
 from __future__ import annotations
 
 import aiohttp
@@ -6,15 +6,26 @@ import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
+from homeassistant.helpers.typing import ConfigType
 
 from .api import SoEnergyClient
-from .const import CONF_ACCOUNT_ID
+from .const import CONF_ACCOUNT_ID, DOMAIN
 from .coordinator import SoEnergyCoordinator
+from .services import async_setup_services
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.BUTTON, Platform.SENSOR]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 type SoEnergyConfigEntry = ConfigEntry[SoEnergyCoordinator]
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the So Charged actions."""
+    async_setup_services(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: SoEnergyConfigEntry) -> bool:

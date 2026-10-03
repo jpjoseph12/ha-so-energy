@@ -41,6 +41,8 @@ async def async_get_config_entry_diagnostics(
                 "fetched_at": data.fetched_at.isoformat() if data else None,
                 "account_widget": data.widget if data else None,
                 "site_state": data.site_state if data else None,
+                "intent": data.intent if data else None,
+                "intent_feasibility": data.intent_feasibility if data else None,
                 "chargers": data.chargers if data else None,
                 "charge_sessions": data.sessions if data else None,
             },

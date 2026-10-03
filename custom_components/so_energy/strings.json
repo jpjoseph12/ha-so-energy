@@ -53,6 +53,76 @@
       "charger_status": { "name": "Charger status" },
       "smart_charge_stage": { "name": "Smart charge stage" },
       "last_updated": { "name": "Last updated" }
+    },
+    "button": {
+      "start_boost": { "name": "Boost charge" },
+      "stop_boost": { "name": "Cancel boost" },
+      "cancel_scheduled_charge": { "name": "Cancel scheduled charge" },
+      "reschedule_charge": { "name": "Reschedule charge" }
+    }
+  },
+  "services": {
+    "set_charge_target": {
+      "name": "Set charge target",
+      "description": "Update the So Charged target, like Update target in the app. Leave a field out to keep its current value. Returns the target sent and whether So Energy thinks it is achievable.",
+      "fields": {
+        "energy_kwh": {
+          "name": "Energy",
+          "description": "kWh to add by the ready-by time. Use this when no vehicle is linked (charger only)."
+        },
+        "soc_percent": {
+          "name": "Battery level",
+          "description": "Battery % to reach by the ready-by time. Use this when a vehicle is linked."
+        },
+        "ready_by": {
+          "name": "Ready by",
+          "description": "Local time the charge should be finished by (the next time this time comes round)."
+        },
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Only needed if more than one So Energy account is set up."
+        }
+      }
+    },
+    "start_boost": {
+      "name": "Boost charge",
+      "description": "Start charging now, ignoring the smart-charge schedule.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Only needed if more than one So Energy account is set up."
+        }
+      }
+    },
+    "stop_boost": {
+      "name": "Cancel boost",
+      "description": "Stop a boost charge.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Only needed if more than one So Energy account is set up."
+        }
+      }
+    },
+    "cancel_scheduled_charge": {
+      "name": "Cancel scheduled charge",
+      "description": "Stop the current smart-charge schedule. A new one is generated the next day, or use Reschedule charge.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Only needed if more than one So Energy account is set up."
+        }
+      }
+    },
+    "reschedule_charge": {
+      "name": "Reschedule charge",
+      "description": "Generate a new smart-charge schedule after a cancel or a stopped boost.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Only needed if more than one So Energy account is set up."
+        }
+      }
     }
   }
 }

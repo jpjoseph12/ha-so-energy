@@ -8,12 +8,16 @@ There is no public API. This mirrors what www.so.energy does in the browser:
 3. Post the component token to the Axle app (app.smart-charging.so.energy) to
    get an app session cookie, then read the home route's loader data, which
    carries the So Charged allowance, charge sessions and charger state.
+4. The home layout's loader data also carries a ~24h Bearer JWT and the
+   charger/vehicle asset IDs. The app's buttons (boost, update target,
+   reschedule) call the Axle REST API (api.axle.energy) directly with them.
 
 The Axle app is a React Router app, so its `.data` responses are encoded with
 turbo-stream; `decode_turbo_stream` flattens them back into plain Python.
 """
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import json
@@ -24,7 +28,7 @@ from typing import Any
 
 import aiohttp
 
-from .const import AXLE_APP_URL, PORTAL_URL, SO_CHARGED_PAGE_URL, WEBSITE_URL
+from .const import AXLE_API_URL, AXLE_APP_URL, PORTAL_URL, SO_CHARGED_PAGE_URL, WEBSITE_URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,6 +39,9 @@ USER_AGENT = (
 TIMEOUT = aiohttp.ClientTimeout(total=30)
 HOME_DATA_PATH = "/app/_.data?_routes=routes%2Fhome%2F_layout%2Croutes%2Fhome%2Findex"
 HOME_ROUTE = "routes/home/index"
+HOME_LAYOUT_ROUTE = "routes/home/_layout"
+# The only mode the app's "Update target" page sends.
+CHARGING_MODE = "minimise_charging_time"
 
 
 class SoEnergyError(Exception):
@@ -54,6 +61,8 @@ class SoChargedData:
     sessions: list[dict[str, Any]] = field(default_factory=list)
     chargers: list[dict[str, Any]] = field(default_factory=list)
     site_state: dict[str, Any] = field(default_factory=dict)
+    intent: dict[str, Any] = field(default_factory=dict)
+    intent_feasibility: str | None = None
     fetched_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -163,6 +172,40 @@ def _find_key(obj: Any, key: str) -> Any:
     return None
 
 
+def _jwt_expiry(token: str) -> datetime:
+    """Expiry of a JWT (unverified); assume ~1 hour if it can't be read."""
+    try:
+        payload = token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        return datetime.fromtimestamp(claims["exp"], tz=timezone.utc)
+    except (IndexError, KeyError, TypeError, ValueError):
+        return datetime.now(timezone.utc) + timedelta(hours=1)
+
+
+def build_intent(
+    ready_by: datetime,
+    energy_kwh: float | None = None,
+    soc_percent: int | None = None,
+) -> dict[str, Any]:
+    """Charge target as the app's "Update target" page sends it.
+
+    `ready_by` must be timezone-aware; the app sends the next occurrence of the
+    chosen local time. Give `energy_kwh` for a charger-only setup or
+    `soc_percent` when a vehicle is linked.
+    """
+    if (energy_kwh is None) == (soc_percent is None):
+        raise ValueError("Give exactly one of energy_kwh or soc_percent")
+    intent: dict[str, Any] = {
+        "ready_by": ready_by.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "charging_mode": CHARGING_MODE,
+    }
+    if energy_kwh is not None:
+        intent["energy_required_kwh"] = energy_kwh
+    else:
+        intent["soc_required"] = soc_percent
+    return intent
+
+
 # --- client ------------------------------------------------------------------
 
 
@@ -182,6 +225,9 @@ class SoEnergyClient:
         self.account_id = account_id
         self._access_token: str | None = None
         self._access_expiry = datetime.min.replace(tzinfo=timezone.utc)
+        self._api_token: str | None = None
+        self._api_expiry = datetime.min.replace(tzinfo=timezone.utc)
+        self._asset_ids: dict[str, str] = {}
 
     # portal ------------------------------------------------------------------
 
@@ -339,22 +385,132 @@ class SoEnergyClient:
         if not isinstance(route, dict) or not isinstance(route.get("data"), dict):
             # A redirect back to /auth/... means the app session has lapsed.
             return None
+
+        layout = (decoded.get(HOME_LAYOUT_ROUTE) or {}).get("data") or {}
+        if token := layout.get("token"):
+            self._api_token = token
+            self._api_expiry = _jwt_expiry(token)
+        if isinstance(layout.get("assetIdMap"), dict):
+            self._asset_ids = {k: v for k, v in layout["assetIdMap"].items() if v}
         return route["data"]
 
-    async def async_get_data(self) -> SoChargedData:
-        """One poll: reuse the Axle session if it's still good, otherwise renew it."""
+    async def _async_load_home(self) -> dict[str, Any]:
+        """Home data, signing in to the Axle app first if its session has lapsed."""
         home = await self._async_fetch_home()
         if home is None:
             await self._async_start_axle_session()
             home = await self._async_fetch_home()
             if home is None:
                 raise SoEnergyError("So Charged app did not return account data after signing in")
+        return home
+
+    async def async_get_data(self) -> SoChargedData:
+        """One poll: reuse the Axle session if it's still good, otherwise renew it."""
+        home = await self._async_load_home()
+
+        intent: dict[str, Any] = {}
+        if self._asset_ids:
+            try:
+                intent = (await self.async_get_intent()).get("intent") or {}
+            except SoEnergyError as err:
+                _LOGGER.debug("Could not read So Charged charge target: %s", err)
 
         assets = home.get("connectedAssets") or {}
+        feasibility = home.get("intentFeasibilityPromise")
         return SoChargedData(
             home=home,
             widget=home.get("accountWidgetPromise") or {},
             sessions=home.get("chargeSessionsPromise") or [],
             chargers=assets.get("chargers") or [],
             site_state=home.get("siteState") or {},
+            intent=intent,
+            intent_feasibility=feasibility if isinstance(feasibility, str) else None,
         )
+
+    # Axle REST API (smart-charging controls) ---------------------------------
+
+    @property
+    def has_vehicle(self) -> bool:
+        """True when a vehicle is linked, so targets are % state of charge, not kWh."""
+        return "vehicle" in self._asset_ids
+
+    def _asset_id_for(self, purpose: str) -> str:
+        """Same choice the app makes: targets go to the vehicle, controls to the charger."""
+        first, second = ("vehicle", "charger") if purpose == "intent" else ("charger", "vehicle")
+        asset_id = self._asset_ids.get(first) or self._asset_ids.get(second)
+        if not asset_id:
+            raise SoEnergyError("No So Charged charger or vehicle is linked to this account")
+        return asset_id
+
+    async def _async_ensure_api_token(self) -> None:
+        if self._api_token and datetime.now(timezone.utc) < self._api_expiry - timedelta(minutes=5):
+            return
+        await self._async_load_home()
+        if not self._api_token:
+            raise SoEnergyError("So Charged app did not return an API token")
+
+    async def _async_api(
+        self, method: str, purpose: str, path: str, body: dict[str, Any] | None = None
+    ) -> Any:
+        """Call api.axle.energy for the right asset, renewing the token once on a 401."""
+        await self._async_ensure_api_token()
+        url = f"{AXLE_API_URL}/components/asset/{self._asset_id_for(purpose)}{path}"
+        for attempt in range(2):
+            try:
+                async with self._session.request(
+                    method,
+                    url,
+                    json=body,
+                    headers={
+                        "Authorization": f"Bearer {self._api_token}",
+                        "Accept": "application/json",
+                        "Origin": WEBSITE_URL,
+                        "Referer": f"{AXLE_APP_URL}/",
+                        "User-Agent": USER_AGENT,
+                    },
+                    timeout=TIMEOUT,
+                ) as resp:
+                    if resp.status == 401 and attempt == 0:
+                        self._api_token = None
+                        await self._async_ensure_api_token()
+                        continue
+                    text = await resp.text()
+                    if resp.status >= 400:
+                        try:
+                            detail = json.loads(text).get("detail") or text
+                        except (ValueError, AttributeError):
+                            detail = text
+                        raise SoEnergyError(f"So Charged rejected {method} {path}: {resp.status} {detail}")
+                    return json.loads(text) if text else None
+            except aiohttp.ClientError as err:
+                raise SoEnergyError(f"So Charged request {path} failed: {err}") from err
+        raise SoEnergyError("So Charged API token could not be renewed")
+
+    async def async_get_intent(self) -> dict[str, Any]:
+        """Current charge target: {"intent": {energy_required_kwh, soc_required, ready_by, ...}}."""
+        return await self._async_api("GET", "intent", "/intent") or {}
+
+    async def async_validate_intent(self, intent: dict[str, Any]) -> str | None:
+        """Check a target without saving it: "achievable", "impossible", "plug_in_too_late", ..."""
+        result = await self._async_api("POST", "intent", "/intent/validate", {"intent": intent})
+        return (result or {}).get("feasibility")
+
+    async def async_set_intent(self, intent: dict[str, Any]) -> None:
+        """Save a new charge target (the app's "Update target")."""
+        await self._async_api("POST", "intent", "/event/intent", {"intent": intent})
+
+    async def async_start_boost(self) -> None:
+        """Charge now, ignoring the schedule (the app's "Boost charge")."""
+        await self._async_api("POST", "control", "/enode/charge-now")
+
+    async def async_stop_boost(self) -> None:
+        """Cancel a boost (the app's "Cancel boost")."""
+        await self._async_api("POST", "control", "/enode/charge-now-deleted")
+
+    async def async_cancel_scheduled_charge(self) -> None:
+        """Stop tonight's smart-charge schedule (the app's "Cancel" while charging on schedule)."""
+        await self._async_api("POST", "control", "/enode/scheduled-charge-deleted")
+
+    async def async_reschedule(self) -> None:
+        """Generate a new smart-charge schedule (the app's "Reschedule")."""
+        await self._async_api("POST", "control", "/reschedule")

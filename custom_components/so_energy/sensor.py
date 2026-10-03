@@ -13,14 +13,12 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfLength
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import SoEnergyConfigEntry
 from .api import SoChargedData
-from .const import DOMAIN, SO_CHARGED_PAGE_URL
 from .coordinator import SoEnergyCoordinator
+from .entity import SoChargedEntity
 
 
 def _range(data: SoChargedData) -> dict[str, Any]:
@@ -98,6 +96,10 @@ def _schedule_attrs(data: SoChargedData) -> dict[str, Any]:
         "schedule_end": schedule.get("schedule_end"),
         "target_amount": schedule.get("target_amount"),
         "target_unit": schedule.get("target_unit"),
+        "target_energy_kwh": data.intent.get("energy_required_kwh"),
+        "target_soc_percent": data.intent.get("soc_required"),
+        "ready_by": data.intent.get("ready_by_local_time"),
+        "target_feasibility": data.intent_feasibility,
         "failed_action": data.site_state.get("failed_action"),
     }
 
@@ -220,26 +222,14 @@ async def async_setup_entry(
     async_add_entities(SoChargedSensor(coordinator, description) for description in SENSORS)
 
 
-class SoChargedSensor(CoordinatorEntity[SoEnergyCoordinator], SensorEntity):
+class SoChargedSensor(SoChargedEntity, SensorEntity):
     """One value from the So Charged account widget / home data."""
 
-    _attr_has_entity_name = True
     entity_description: SoChargedSensorDescription
 
     def __init__(self, coordinator: SoEnergyCoordinator, description: SoChargedSensorDescription) -> None:
-        super().__init__(coordinator)
+        super().__init__(coordinator, description.key)
         self.entity_description = description
-        entry = coordinator.config_entry
-        self._attr_unique_id = f"{entry.unique_id}_{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.unique_id)},
-            name="So Charged",
-            manufacturer="So Energy",
-            model="So Charged",
-            serial_number=entry.unique_id,
-            entry_type=DeviceEntryType.SERVICE,
-            configuration_url=SO_CHARGED_PAGE_URL,
-        )
 
     @property
     def native_value(self) -> Any:
